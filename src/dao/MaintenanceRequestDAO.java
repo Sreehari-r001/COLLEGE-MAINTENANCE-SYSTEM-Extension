@@ -18,8 +18,9 @@ public class MaintenanceRequestDAO {
 
     public int insertRequest(RequestRecord r) {
         String sql = "INSERT INTO maintenance_requests "
-                + "(submitted_by, department, room, category, description) "
-                + "VALUES (?, ?, ?, ?, ?)";
+		   + "(submitted_by, department, room, category, description, "
+		   + "priority, estimated_amount) "
+		   + "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
         Connection con = null;
         PreparedStatement ps = null;
@@ -42,7 +43,8 @@ public class MaintenanceRequestDAO {
             } else {
                 ps.setString(5, r.getDescription());
             }
-
+            ps.setString(6, r.getpriority());
+			ps.setDouble(7, r.getEstimatedAmount());
             ps.executeUpdate();
 
             keys = ps.getGeneratedKeys();
@@ -70,7 +72,7 @@ public class MaintenanceRequestDAO {
 
     public RequestRecord getRequestById(int requestId) {
         String sql = "SELECT request_id, submitted_by, department, room, "
-                + "category, description, status, assigned_to "
+                + "category, description, status, assigned_to, priority, estimated_amount "
                 + "FROM maintenance_requests WHERE request_id = ?";
 
         try (Connection con =
@@ -95,7 +97,7 @@ public class MaintenanceRequestDAO {
 
     public ArrayList<RequestRecord> getAllRequests() {
         String sql = "SELECT request_id, submitted_by, department, room, "
-                + "category, description, status, assigned_to "
+                + "category, description, status, assigned_to, priority, estimated_amount "
                 + "FROM maintenance_requests ORDER BY request_id";
 
         ArrayList<RequestRecord> list = new ArrayList<>();
@@ -117,13 +119,46 @@ public class MaintenanceRequestDAO {
         return list;
     }
 
+	public ArrayList<RequestRecord> getApprovedAndAssignedByPriority() {
+
+		String sql = "SELECT request_id, submitted_by, department, room, category, "
+		           + "description, status, assigned_to, priority, estimated_amount "
+		           + "FROM maintenance_requests "
+		           + "WHERE status IN ('APPROVED', 'ASSIGNED') "
+		           + "ORDER BY CASE priority "
+		           + "WHEN 'HIGH' THEN 1 "
+		           + "WHEN 'MEDIUM' THEN 2 "
+		           + "ELSE 3 END, request_id";
+
+		ArrayList<RequestRecord> list = new ArrayList<RequestRecord>();
+		Connection con = null;
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+
+		try {
+			con = DatabaseConnection.getInstance().getConnection();
+			ps = con.prepareStatement(sql);
+			rs = ps.executeQuery();
+
+			while (rs.next()) {
+				list.add(makeRecord(rs));
+			}
+
+		} catch (SQLException e) {
+			System.out.println("Could not get requests by priority: " + e.getMessage());
+		} finally {
+			closeAll(con, ps, rs);
+		}
+		return list;
+	}
+
     // Gets requests for a specific submitter and checks the actual
     // maintenance_requests count on the same database connection.
     public ArrayList<RequestRecord> getRequestsBySubmitter(
             int submitterId) {
 
         String sql = "SELECT request_id, submitted_by, department, room, "
-                + "category, description, status, assigned_to "
+                + "category, description, status, assigned_to, priority, estimated_amount "
                 + "FROM maintenance_requests WHERE submitted_by = ? "
                 + "ORDER BY request_id";
 
@@ -180,7 +215,7 @@ public class MaintenanceRequestDAO {
 
     public ArrayList<RequestRecord> getRequestsByStatus(String status) {
         String sql = "SELECT request_id, submitted_by, department, room, "
-                + "category, description, status, assigned_to "
+                + "category, description, status, assigned_to, priority, estimated_amount "
                 + "FROM maintenance_requests WHERE status = ? "
                 + "ORDER BY request_id";
 
@@ -342,7 +377,7 @@ public class MaintenanceRequestDAO {
             int staffId) {
 
         String sql = "SELECT request_id, submitted_by, department, room, "
-                + "category, description, status, assigned_to "
+                + "category, description, status, assigned_to, priority, estimated_amount "
                 + "FROM maintenance_requests WHERE assigned_to = ? "
                 + "ORDER BY request_id";
 
@@ -490,7 +525,8 @@ public class MaintenanceRequestDAO {
         request.setRequestId(rs.getInt("request_id"));
         request.setStatus(rs.getString("status"));
         request.setAssignedTo(rs.getInt("assigned_to"));
-
+        request.setPriority(rs.getString("priority"));
+		request.setEstimatedAmount(rs.getDouble("estimated_amount"));
         return request;
     }
 
