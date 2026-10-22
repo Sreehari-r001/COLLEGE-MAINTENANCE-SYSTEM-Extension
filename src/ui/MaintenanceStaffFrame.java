@@ -24,6 +24,8 @@ public class MaintenanceStaffFrame extends JFrame {
     private JLabel totalLabel;
     private JLabel activeLabel;
     private JLabel completedLabel;
+    private JLabel availableFundLabel;
+
 
     public MaintenanceStaffFrame(String email) {
         this.email = email;
@@ -73,12 +75,14 @@ public class MaintenanceStaffFrame extends JFrame {
         JPanel summary = new JPanel(new FlowLayout(FlowLayout.LEFT));
 
         totalLabel = new JLabel("Assigned: 0");
-        activeLabel = new JLabel("In Progress: 0");
-        completedLabel = new JLabel("Completed: 0");
+activeLabel = new JLabel("In Progress: 0");
+completedLabel = new JLabel("Completed: 0");
+availableFundLabel = new JLabel("Available Fund: Loading...");
 
-        summary.add(totalLabel);
-        summary.add(activeLabel);
-        summary.add(completedLabel);
+summary.add(totalLabel);
+summary.add(activeLabel);
+summary.add(completedLabel);
+summary.add(availableFundLabel);
 
         panel.add(labels, BorderLayout.NORTH);
         panel.add(summary, BorderLayout.SOUTH);
@@ -217,6 +221,7 @@ public class MaintenanceStaffFrame extends JFrame {
             }
 
             updateSummaryCards();
+            refreshAvailableFund();
 
         } catch (SQLException ex) {
             showDatabaseError("Could not load assigned work.", ex);
@@ -259,6 +264,23 @@ public class MaintenanceStaffFrame extends JFrame {
             showDatabaseError("Could not load work statistics.", ex);
         }
     }
+    private void refreshAvailableFund() {
+    try {
+        FundManagementService service = new FundManagementService();
+        BigDecimal amount = service.getAvailableFund();
+
+        availableFundLabel.setText(
+                "Available Fund: \u20B9"
+                + amount.setScale(2, java.math.RoundingMode.HALF_UP)
+        );
+
+    } catch (SQLException ex) {
+        availableFundLabel.setText("Available Fund: Unavailable");
+        System.err.println(
+                "Could not load available fund: " + ex.getMessage()
+        );
+    }
+}
 
     private void viewDetails() {
         int selectedRow = table.getSelectedRow();

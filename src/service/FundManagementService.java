@@ -195,4 +195,20 @@ public class FundManagementService {
             }
         }
     }
+  public BigDecimal getAvailableFund() throws SQLException {
+    String sql =
+            "SELECT available_amount FROM hod_fund WHERE fund_id = 1";
+
+    try (Connection con =
+                 DatabaseConnection.getInstance().getConnection();
+         PreparedStatement ps = con.prepareStatement(sql);
+         ResultSet rs = ps.executeQuery()) {
+
+        if (rs.next()) {
+            return rs.getBigDecimal("available_amount");
+        }
+
+        throw new SQLException("HOD fund record not found.");
+    }
+}  
 }
