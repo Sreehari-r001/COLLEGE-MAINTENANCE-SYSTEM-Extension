@@ -10,6 +10,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import service.FundManagementService;
+import java.math.BigDecimal;
 
 public class MaintenanceStaffFrame extends JFrame {
 
@@ -286,135 +288,143 @@ public class MaintenanceStaffFrame extends JFrame {
         );
     }
 
-    private void updateStatus() {
-        int selectedRow = table.getSelectedRow();
+    
+private void updateStatus() {
+    int selectedRow = table.getSelectedRow();
 
-        if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Please select a request first."
-            );
-            return;
-        }
+    if (selectedRow == -1) {
+        JOptionPane.showMessageDialog(
+                this, "Please select a request first."
+        );
+        return;
+    }
 
-        int row = table.convertRowIndexToModel(selectedRow);
-        int requestId =
-                Integer.parseInt(model.getValueAt(row, 0).toString());
+    int row = table.convertRowIndexToModel(selectedRow);
 
-        String currentStatus =
-                model.getValueAt(row, 4).toString()
-                        .toUpperCase().replace(' ', '_');
+    int requestId = Integer.parseInt(
+            model.getValueAt(row, 0).toString()
+    );
 
-        String nextStatus;
+    String currentStatus = model.getValueAt(row, 4)
+            .toString().toUpperCase().replace(' ', '_');
 
-        if ("ASSIGNED".equals(currentStatus)
-                || "APPROVED".equals(currentStatus)) {
-            nextStatus = "IN_PROGRESS";
-        } else if ("IN_PROGRESS".equals(currentStatus)) {
-            nextStatus = "COMPLETED";
-        } else {
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Only assigned or in-progress work can be updated."
-            );
-            return;
-        }
-
-        int confirm = JOptionPane.showConfirmDialog(
+    if ("ASSIGNED".equals(currentStatus)) {
+        String amountText = JOptionPane.showInputDialog(
                 this,
-                "Change request " + requestId + " to "
-                        + nextStatus.replace('_', ' ') + "?",
-                "Confirm Status Update",
-                JOptionPane.YES_NO_OPTION
+                "Enter the estimated maintenance cost (₹):"
         );
 
-        if (confirm != JOptionPane.YES_OPTION) {
+        if (amountText == null) {
             return;
         }
 
-        Connection connection = null;
-        boolean originalAutoCommit = true;
-
         try {
-            connection =
-                    DatabaseConnection.getInstance().getConnection();
+            BigDecimal amount = new BigDecimal(amountText.trim());
 
-            originalAutoCommit = connection.getAutoCommit();
-            connection.setAutoCommit(false);
+            FundManagementService service =
+                    new FundManagementService();
 
-            try {
-                String updateSql =
-                        "UPDATE maintenance_requests "
-                        + "SET status = ? "
-                        + "WHERE request_id = ? "
-                        + "AND assigned_to = ? AND status = ?";
-
-                int updated;
-
-                try (PreparedStatement statement =
-                             connection.prepareStatement(updateSql)) {
-
-                    statement.setString(1, nextStatus);
-                    statement.setInt(2, requestId);
-                    statement.setInt(3, staffId);
-                    statement.setString(4, currentStatus);
-
-                    updated = statement.executeUpdate();
-                }
-
-                if (updated == 0) {
-                    connection.rollback();
-
-                    JOptionPane.showMessageDialog(
-                            this,
-                            "The request was not updated. Refresh the table "
-                                    + "and check its current status."
-                    );
-                    return;
-                }
-
-                String historySql =
-                        "INSERT INTO request_history "
-                        + "(request_id, old_status, new_status, "
-                        + "changed_by, remarks) "
-                        + "VALUES (?, ?, ?, ?, ?)";
-
-                try (PreparedStatement statement =
-                             connection.prepareStatement(historySql)) {
-
-                    statement.setInt(1, requestId);
-                    statement.setString(2, currentStatus);
-                    statement.setString(3, nextStatus);
-                    statement.setInt(4, staffId);
-                    statement.setString(
-                            5, "Status updated by maintenance staff"
-                    );
-
-                    statement.executeUpdate();
-                }
-
-                connection.commit();
-
-            } catch (SQLException ex) {
-                connection.rollback();
-                throw ex;
-            } finally {
-                connection.setAutoCommit(originalAutoCommit);
-            }
-
-            refreshWorkTable();
-
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Request " + requestId + " updated to "
-                            + nextStatus.replace('_', ' ') + "."
+            String result = service.estimateCostAndStartWork(
+                    requestId, staffId, amount
             );
 
+            JOptionPane.showMessageDialog(this, result);
+            refreshWorkTable();
+
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Enter a valid positive amount, such as 1500.00."
+            );
         } catch (SQLException ex) {
             showDatabaseError(
-                    "Could not update the request status.", ex);
+                    "Could not process the maintenance estimate.", ex
+            );
         }
+
+        return;
     }
+
+    if (!"IN_PROGRESS".equals(currentStatus)) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Only assigned requests can be started, and "
+                        + "in-progress requests can be completed."
+        );
+        return;
+    }
+
+    int confirm = JOptionPane.showConfirmDialog(
+            this,
+            "Mark request " + requestId + " as COMPLETED?",
+            "Confirm Status Update",
+            JOptionPane.YES_NO_OPTION
+    );
+
+    if (confirm != JOptionPane.YES_OPTION) {
+        return;
+    }
+
+    String updateSql =
+            "UPDATE maintenance_requests SET status = 'COMPLETED' "
+            + "WHERE request_id = ? AND assigned_to = ? "
+            + "AND status = 'IN_PROGRESS'";
+
+    String historySql =
+            "INSERT INTO request_history "
+            + "(request_id, old_status, new_status, changed_by, remarks) "
+            + "VALUES (?, ?, ?, ?, ?)";
+
+    try (Connection connection =
+                 DatabaseConnection.getInstance().getConnection()) {
+
+        connection.setAutoCommit(false);
+
+        try {
+            try (PreparedStatement statement =
+                         connection.prepareStatement(updateSql)) {
+                statement.setInt(1, requestId);
+                statement.setInt(2, staffId);
+
+                if (statement.executeUpdate() != 1) {
+                    throw new SQLException(
+                            "Request could not be completed. Refresh and retry."
+                    );
+                }
+            }
+
+            try (PreparedStatement statement =
+                         connection.prepareStatement(historySql)) {
+                statement.setInt(1, requestId);
+                statement.setString(2, "IN_PROGRESS");
+                statement.setString(3, "COMPLETED");
+                statement.setInt(4, staffId);
+                statement.setString(5, "Completed by maintenance staff");
+                statement.executeUpdate();
+            }
+
+            connection.commit();
+
+        } catch (SQLException | RuntimeException ex) {
+            connection.rollback();
+            throw ex;
+
+        } finally {
+            connection.setAutoCommit(true);
+        }
+
+        refreshWorkTable();
+
+        JOptionPane.showMessageDialog(
+                this, "Request " + requestId + " is now COMPLETED."
+        );
+
+    } catch (SQLException ex) {
+        showDatabaseError(
+                "Could not update the request status.", ex
+        );
+    }
+}
 
     private String formatStatus(String status) {
         if (status == null) {
