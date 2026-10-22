@@ -24,12 +24,14 @@ public class HodReviewFrame extends JFrame {
         hodEmail = email;
 
         setTitle("HOD - Review Maintenance Requests");
-        setSize(1100, 600);
+        setSize(1200, 600);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        mainPanel.setBorder(
+            BorderFactory.createEmptyBorder(15, 15, 15, 15)
+        );
 
         // Heading
         JLabel title = new JLabel("Review Maintenance Requests");
@@ -51,6 +53,7 @@ public class HodReviewFrame extends JFrame {
             "Location",
             "Category",
             "Description",
+            "Priority",
             "Status"
         };
 
@@ -66,6 +69,7 @@ public class HodReviewFrame extends JFrame {
             ListSelectionModel.SINGLE_SELECTION
         );
         requestTable.setAutoCreateRowSorter(true);
+        requestTable.setRowHeight(25);
 
         mainPanel.add(
             new JScrollPane(requestTable),
@@ -76,6 +80,7 @@ public class HodReviewFrame extends JFrame {
         JButton refreshButton = new JButton("Refresh");
         JButton approveButton = new JButton("Approve Request");
         JButton rejectButton = new JButton("Reject Request");
+        JButton priorityButton = new JButton("Set Priority");
         JButton assignButton = new JButton("Assign Staff");
         JButton dashboardButton = new JButton("Dashboard");
         JButton logoutButton = new JButton("Log Out");
@@ -83,15 +88,20 @@ public class HodReviewFrame extends JFrame {
         refreshButton.addActionListener(e -> refreshTable());
         approveButton.addActionListener(e -> updateStatus("APPROVED"));
         rejectButton.addActionListener(e -> updateStatus("REJECTED"));
+        priorityButton.addActionListener(e -> setPriority());
         assignButton.addActionListener(e -> assignSelectedRequest());
 
         dashboardButton.addActionListener(e -> goToDashboard());
         logoutButton.addActionListener(e -> logout());
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JPanel buttons = new JPanel(
+            new FlowLayout(FlowLayout.CENTER, 8, 5)
+        );
+
         buttons.add(refreshButton);
         buttons.add(approveButton);
         buttons.add(rejectButton);
+        buttons.add(priorityButton);
         buttons.add(assignButton);
         buttons.add(dashboardButton);
         buttons.add(logoutButton);
@@ -111,7 +121,7 @@ public class HodReviewFrame extends JFrame {
         String sql =
             "SELECT mr.request_id, u.email, u.role, " +
             "mr.department, mr.room, mr.category, " +
-            "mr.description, mr.status " +
+            "mr.description, mr.priority, mr.status " +
             "FROM maintenance_requests mr " +
             "JOIN users u ON mr.submitted_by = u.user_id " +
             "ORDER BY mr.request_id DESC";
@@ -136,13 +146,15 @@ public class HodReviewFrame extends JFrame {
                     rs.getString("room"),
                     rs.getString("category"),
                     rs.getString("description"),
+                    rs.getString("priority"),
                     status
                 });
             }
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(
                 this,
-                "Could not load requests from MySQL.\n" + e.getMessage(),
+                "Could not load requests from MySQL.\n" +
+                    e.getMessage(),
                 "Database Error",
                 JOptionPane.ERROR_MESSAGE
             );
@@ -166,7 +178,8 @@ public class HodReviewFrame extends JFrame {
             model.getValueAt(row, 0).toString()
         );
 
-        String currentStatus = model.getValueAt(row, 6).toString();
+        // Status is now column index 7
+        String currentStatus = model.getValueAt(row, 7).toString();
 
         if (!currentStatus.equalsIgnoreCase("PENDING")) {
             JOptionPane.showMessageDialog(
@@ -223,7 +236,98 @@ public class HodReviewFrame extends JFrame {
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(
                 this,
-                "Could not update request status.\n" + e.getMessage(),
+                "Could not update request status.\n" +
+                    e.getMessage(),
+                "Database Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+        }
+    }
+
+    // Set priority for an approved request
+    private void setPriority() {
+        int selectedRow = requestTable.getSelectedRow();
+
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(
+                this, "Please select a request first."
+            );
+            return;
+        }
+
+        int row = requestTable.convertRowIndexToModel(selectedRow);
+
+        int requestId = Integer.parseInt(
+            model.getValueAt(row, 0).toString()
+        );
+
+        String status = model.getValueAt(row, 7).toString();
+
+        if (!status.equalsIgnoreCase("APPROVED")) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Approve the request before setting its priority."
+            );
+            return;
+        }
+
+        String[] priorities = {"HIGH", "MEDIUM", "LOW"};
+
+        JComboBox<String> priorityBox =
+            new JComboBox<>(priorities);
+
+        String currentPriority =
+            model.getValueAt(row, 6).toString();
+
+        priorityBox.setSelectedItem(currentPriority);
+
+        int choice = JOptionPane.showConfirmDialog(
+            this,
+            priorityBox,
+            "Set Priority for REQ-" + requestId,
+            JOptionPane.OK_CANCEL_OPTION
+        );
+
+        if (choice != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        String selectedPriority =
+            priorityBox.getSelectedItem().toString();
+
+        String sql =
+            "UPDATE maintenance_requests SET priority = ? " +
+            "WHERE request_id = ? AND status = 'APPROVED'";
+
+        try (
+            Connection con =
+                DatabaseConnection.getInstance().getConnection();
+            PreparedStatement ps = con.prepareStatement(sql)
+        ) {
+            ps.setString(1, selectedPriority);
+            ps.setInt(2, requestId);
+
+            int updated = ps.executeUpdate();
+
+            if (updated == 1) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Priority for REQ-" + requestId +
+                        " set to " + selectedPriority + "."
+                );
+            } else {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Priority was not updated. Refresh and try again."
+                );
+            }
+
+            refreshTable();
+
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Could not update priority.\n" + e.getMessage(),
                 "Database Error",
                 JOptionPane.ERROR_MESSAGE
             );
@@ -247,11 +351,13 @@ public class HodReviewFrame extends JFrame {
             model.getValueAt(row, 0).toString()
         );
 
-        String status = model.getValueAt(row, 6).toString();
+        // Status is now column index 7
+        String status = model.getValueAt(row, 7).toString();
 
         if (!status.equalsIgnoreCase("APPROVED")) {
             JOptionPane.showMessageDialog(
-                this, "Only approved requests can be assigned to staff."
+                this,
+                "Only approved requests can be assigned to staff."
             );
             return;
         }
@@ -279,7 +385,8 @@ public class HodReviewFrame extends JFrame {
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(
                 this,
-                "Could not load maintenance staff.\n" + e.getMessage()
+                "Could not load maintenance staff.\n" +
+                    e.getMessage()
             );
             return;
         }
@@ -307,6 +414,13 @@ public class HodReviewFrame extends JFrame {
 
         int index = staffBox.getSelectedIndex();
 
+        if (index < 0) {
+            JOptionPane.showMessageDialog(
+                this, "Please select a maintenance staff member."
+            );
+            return;
+        }
+
         int confirm = JOptionPane.showConfirmDialog(
             this,
             "Assign request REQ-" + requestId + " to " +
@@ -325,13 +439,17 @@ public class HodReviewFrame extends JFrame {
 
             if (hodId == -1) {
                 JOptionPane.showMessageDialog(
-                    this, "Could not identify the logged-in HOD account."
+                    this,
+                    "Could not identify the logged-in HOD account."
                 );
                 return;
             }
 
             dao.assignStaff(
-                requestId, staffIds.get(index), hodId, "Assigned by HOD"
+                requestId,
+                staffIds.get(index),
+                hodId,
+                "Assigned by HOD"
             );
 
             JOptionPane.showMessageDialog(
@@ -357,7 +475,9 @@ public class HodReviewFrame extends JFrame {
     }
 
     public static int getTotalRequestCount() {
-        return getCount("SELECT COUNT(*) FROM maintenance_requests");
+        return getCount(
+            "SELECT COUNT(*) FROM maintenance_requests"
+        );
     }
 
     public static int getPendingRequestCount() {
@@ -393,7 +513,8 @@ public class HodReviewFrame extends JFrame {
             }
         } catch (SQLException e) {
             System.out.println(
-                "Could not retrieve request count: " + e.getMessage()
+                "Could not retrieve request count: " +
+                    e.getMessage()
             );
         }
 
