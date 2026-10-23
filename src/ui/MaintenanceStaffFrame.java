@@ -113,7 +113,7 @@ summary.add(availableFundLabel);
 
         table = new JTable(model);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setAutoCreateRowSorter(true);
+        table.setAutoCreateRowSorter(false);
 
         panel.add(new JScrollPane(table), BorderLayout.CENTER);
 
@@ -192,11 +192,15 @@ summary.add(availableFundLabel);
         model.setRowCount(0);
 
         String sql =
-                "SELECT request_id, department, category, "
-                + "description, status "
-                + "FROM maintenance_requests "
-                + "WHERE assigned_to = ? "
-                + "ORDER BY request_id DESC";
+        "SELECT request_id, department, category, "
+        + "description, status, priority "
+        + "FROM maintenance_requests "
+        + "WHERE assigned_to = ? "
+        + "ORDER BY CASE priority "
+        + "WHEN 'HIGH' THEN 1 "
+        + "WHEN 'MEDIUM' THEN 2 "
+        + "WHEN 'LOW' THEN 3 "
+        + "ELSE 4 END, request_id ASC";
 
         try {
             Connection connection =
@@ -209,12 +213,13 @@ summary.add(availableFundLabel);
 
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) {
-                        model.addRow(new Object[]{
+                                model.addRow(new Object[]{
                                 result.getInt("request_id"),
                                 result.getString("department"),
                                 result.getString("category"),
                                 result.getString("description"),
-                                formatStatus(result.getString("status"))
+                                formatStatus(result.getString("status")),
+                                result.getString("priority")
                         });
                     }
                 }

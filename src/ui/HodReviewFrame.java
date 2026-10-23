@@ -68,7 +68,7 @@ public class HodReviewFrame extends JFrame {
         requestTable.setSelectionMode(
             ListSelectionModel.SINGLE_SELECTION
         );
-        requestTable.setAutoCreateRowSorter(true);
+                requestTable.setAutoCreateRowSorter(false);
         requestTable.setRowHeight(25);
 
         mainPanel.add(
@@ -124,7 +124,11 @@ public class HodReviewFrame extends JFrame {
             "mr.description, mr.priority, mr.status " +
             "FROM maintenance_requests mr " +
             "JOIN users u ON mr.submitted_by = u.user_id " +
-            "ORDER BY mr.request_id DESC";
+            "ORDER BY CASE mr.priority " +
+            "WHEN 'HIGH' THEN 1 " +
+            "WHEN 'MEDIUM' THEN 2 " +
+            "WHEN 'LOW' THEN 3 " +
+            "ELSE 4 END, mr.request_id ASC";
 
         try (
             Connection con =
